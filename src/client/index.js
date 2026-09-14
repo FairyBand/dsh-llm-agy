@@ -4,7 +4,7 @@
 // 字段读写走官方 SettingsScope;状态/测试探测需会话级 remote(暂不可用)。
 // 服务端直接 spawn agy CLI,不落会话。
 window.__ModuleLoader__.load({
-  id: '@flg1217/dsh-llm-agy',
+  id: 'dsh-llm-agy',
   factory: (require) => {
     const module = { exports: {} }
     const exports = module.exports
@@ -48,10 +48,10 @@ window.__ModuleLoader__.load({
       pickerCheck: '.dshAgy_pickerCheck{flex:none;color:var(--dsw-alias-label-primary)}',
     }
     const cssText = Object.values(CSS).join('')
-    const tagId = '@flg1217/llm-agy/plugin-card.css'
+    const tagId = 'dsh-llm-agy/plugin-card.css'
     if (typeof document !== 'undefined' && document.querySelector(`style[data-plugin-css=${JSON.stringify(tagId)}]`) === null) {
       const tag = document.createElement('style')
-      tag.dataset.plugin = '@flg1217/llm-agy'
+      tag.dataset.plugin = 'dsh-llm-agy'
       tag.dataset.pluginCss = tagId
       tag.textContent = cssText
       document.head.appendChild(tag)
