@@ -19,7 +19,8 @@
 
 ### 变更
 
-- **用量显示改为跟随"当前对话"的模型**:原先读的是全局 `agent-default-model` 设置,导致在**不同 provider 的历史对话之间切换时徽标不更新** —— 打开 Gemini 对话显示用量后,切到 DeepSeek 的历史对话仍然显示,必须手动切一次模型再切回来才消失。现在以 `uiSession.current` 取当前会话 id、用会话的模型目录(`modelDirectories.directoryFor(id)`)读该会话的 provider,并同时订阅"会话切换"与"模型切换"两个信号,切换即时生效
+- **用量显示跟随"当前对话"的模型**:徽标读 dsh 的 `modelSelection` 投影(与模型选择器同一份实时状态),经 session 作用域注入的官方 `useProjection` 取得,按 **`next` → `lastUsed` → 全局默认** 解析 —— 顺序很关键:投影形状是 `{ lastUsed, next }`,`next` 是**最近一次选择**(会话内换模型后立刻是它),`lastUsed` 才是该会话实际发过请求的模型。早期版本读不存在的 `current` 字段、或把 `lastUsed` 排在前面,都会表现为"历史对话里换模型徽标不更新"
+- **徽标按模型组区分额度**:AGY 的 Gemini 与 Claude/GPT 额度分账,现在按当前模型 id 选组(`gemini*` → Gemini 组;`claude*`/`gpt*` → Claude/GPT 组),徽标显示该组的 **5 小时剩余百分比**,悬停给出该组 5h/每周明细;认不出模型时回退第一个组
 - **收敛用量入口**:移除输入框下方的常驻药丸与会话顶栏右上角按钮,只保留模型选择器左侧的徽标(点击仍可打开完整配额详情),界面更干净
 - `build.mjs` 在编译前先执行运行时依赖链接,优先使用本地 `tsc`
 
