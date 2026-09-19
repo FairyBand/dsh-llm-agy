@@ -2,6 +2,27 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.1.3] - 2026-09-19
+
+### 新增
+
+- **剩余用量实时可视化**:输入框底栏、模型选择器左侧的 `⚡ 剩余%` 紧凑徽标,以及点击后弹出的配额详情浮层(各模型组 5 小时/每周进度条、恢复时间、AI 积分、手动刷新)
+- **`check_agy_quota` 工具**:对话中直接查询 Gemini / Claude / GPT 各模型组剩余限额与积分
+- **`scripts/link-runtime-deps.mjs`**:自动定位本机 dsh 安装并把宿主运行时包链接进本包 `node_modules`
+- **`scripts/link-profile.mjs` 一步完成装配**:先链接运行时依赖,再装进 profile;仓库路径含空格时(实测 `dsh plugin add` 会把路径拆成 `D:\DSH` + `Working` + `Dirs\...`,pnpm 也不接受 `file://` URL)自动在盘符根下建立无空格 junction 并改用该路径装配
+
+### 修复
+
+- **插件装上后 dsh 无法启动(必须卸载才能启动)**:dsh 以 `link:` 装配时按插件真实路径解析依赖,而仓库里没有 `node_modules/@deepseek-ai/*`,`lib/index.js` 的 `import '@deepseek-ai/schemastery'` 直接 `ERR_MODULE_NOT_FOUND`;dsh 的 `assertEntriesLoaded` 因此中止整个启动。现在由 `link-runtime-deps.mjs` 在构建/装配前建立链接,`verify:portable` 也会把缺失依赖作为失败项报出
+- **`package.json` 依赖声明导致 `pnpm install` 必然失败**:原先声明的 `@deepseek-ai/*` 版本范围与实际发布版本不匹配(如 `@deepseek-ai/dsh-util-values` 无 `^0.1.0-rc.6` 可用版本),pnpm 还会连带拉取未发布的 `@deepseek-ai/dsh-type-meta` 而 404。这些 harness 依赖已从 `dependencies`/`peerDependencies` 移除,改由链接脚本提供;`auto-install-peers=false` 固定写入 `.npmrc`
+- **`lib/index.js` 引用未导入的 `runAgyQuota`**:该符号只出现在 `export { ... } from` 中,HTTP 配额路由一旦被请求就抛 `ReferenceError`。该路由本属冗余(客户端已走 discovery RPC 与设置通道),已整体移除
+
+### 变更
+
+- **用量显示改为跟随"当前对话"的模型**:原先读的是全局 `agent-default-model` 设置,导致在**不同 provider 的历史对话之间切换时徽标不更新** —— 打开 Gemini 对话显示用量后,切到 DeepSeek 的历史对话仍然显示,必须手动切一次模型再切回来才消失。现在以 `uiSession.current` 取当前会话 id、用会话的模型目录(`modelDirectories.directoryFor(id)`)读该会话的 provider,并同时订阅"会话切换"与"模型切换"两个信号,切换即时生效
+- **收敛用量入口**:移除输入框下方的常驻药丸与会话顶栏右上角按钮,只保留模型选择器左侧的徽标(点击仍可打开完整配额详情),界面更干净
+- `build.mjs` 在编译前先执行运行时依赖链接,优先使用本地 `tsc`
+
 ## [0.1.2] - 2026-09-14
 
 ### 修复

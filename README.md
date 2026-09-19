@@ -17,7 +17,19 @@ Use Google's Antigravity CLI — the Gemini-driven coding agent — as a first-c
 | **`list_agy_models`** | Ask AGY which model ids it currently supports |
 | **`read_image_agy`** | Let a text-only main model read an image — AGY returns a text description |
 | **AGY web search** | Google deep search through AGY; can take over the global `web_search` tool, or stay available as `agy_web_search` |
-| **Settings card** | *Settings → Plugins → AntiGravity*: install/login status, live connectivity test, proxy configuration, feature toggles |
+| **Settings card** | *Settings → Plugins → AntiGravity*: install/login status, live connectivity test, **visual quota & usage remaining progress**, proxy configuration, feature toggles |
+| **`check_agy_quota`** | Account quota query tool: view Gemini / Claude / GPT remaining 5-hour and weekly limits, refresh countdowns, and AI credits balance directly in chat |
+
+> **Usage display follows the model of the *current conversation*.** The compact
+> `⚡ remaining%` badge in the composer footer, next to the model picker, renders only when
+> the model of the conversation you are looking at is provided by
+> **Antigravity CLI (Gemini)**; switching to a conversation that runs another provider (or
+> switching that conversation back to another model) hides it immediately — no page reload,
+> no restart. The signal is the current session's model selection (`uiSession` + the session
+> model directory), **not** the global default model, so moving between history conversations
+> of different providers follows correctly. The quota card in the settings panel stays
+> available for manual checks ("Query usage/quota"), and clicking the badge opens the full
+> progress detail.
 
 ---
 
@@ -46,12 +58,35 @@ dsh plugin --profile <profile> add github:FairyBand/dsh-llm-agy
 
 Then **restart dsh**.
 
+> **A local-directory (link) install must link its runtime dependencies first.**
+> Under a `link:` install the plugin's real path is your checkout, so Node resolves its
+> imports from that directory upward — and the server entry imports host packages such as
+> `@deepseek-ai/schemastery`. When those are missing, dsh aborts during startup:
+>
+> ```
+> dsh: plugin(s) failed to load: llm-agy; Cordis startup failed
+> Cannot find package '@deepseek-ai/schemastery' imported from .../lib/index.js
+> ```
+>
+> which reads as "dsh will not start until the plugin is uninstalled". The bundled script
+> does both steps (link runtime deps, then install into the profile); offline and idempotent:
+
+```bash
+# run inside the plugin directory; --profile defaults to web
+node scripts/link-profile.mjs --profile web
+```
+
+> When the checkout path contains **spaces**, `dsh plugin add` splits the argument and pnpm
+> rejects `file://` URLs. The script therefore creates a space-free junction next to the drive
+> root (e.g. `D:\dsh-llm-agy`) and installs through that path — keep that junction.
+
 <details>
 <summary>Other install sources</summary>
 
 ```bash
-# a local checkout
-dsh plugin --profile <profile> add /path/to/dsh-llm-agy
+# manual: link runtime deps first, then install through the space-free path
+node scripts/link-runtime-deps.mjs
+dsh plugin --profile <profile> add D:\dsh-llm-agy
 
 # a packed tarball
 dsh plugin --profile <profile> add /path/to/dsh-llm-agy-0.1.2.tgz
@@ -109,8 +144,36 @@ The resolver never guesses ports and never probes reachability — it is asynchr
 **The model picker has no "Antigravity CLI (Gemini)" group.**
 The plugin is not loaded. Restart dsh and check the plugin is listed in *Settings → Plugins*. If it loads but the group is missing, confirm the host provides `@deepseek-ai/dsh-llm ≥ 0.1.5-rc.2` (see [Requirements](#requirements)).
 
+**dsh will not start once the plugin is installed — it only boots after uninstalling it.**
+The log usually shows:
+
+```
+dsh: plugin(s) failed to load: llm-agy; Cordis startup failed because these plugin(s) could not be resolved
+Cannot find package '@deepseek-ai/<pkg>' imported from <plugin dir>/lib/index.js
+```
+
+With a `link:` install, the plugin's dependencies resolve from **its own directory upward**,
+while the server entry imports host packages. Link them once (offline and idempotent):
+
+```bash
+node scripts/link-runtime-deps.mjs   # run inside the plugin directory
+```
+
+The script locates your dsh installation (desktop / CLI / `DSH_HOME` layouts, or an explicit
+`DSH_INSTALL_DIR`) and links `@deepseek-ai/schemastery` and the other runtime packages into
+`node_modules/@deepseek-ai/`; restart dsh afterwards. Do not run `pnpm install` after that —
+pnpm rebuilds `node_modules` and drops those links, so just re-run the linking script.
+
+**The usage badge disappeared.**
+That is intended: the badge (the `⚡ xx%` next to the model picker in the composer footer) only
+renders while the **current conversation's** model provider is **Antigravity CLI (Gemini)**.
+Switch the conversation to a model from that group to show it again; moving to a conversation
+running another provider hides it automatically. If an AGY model is selected and it still does
+not show, check that *Settings → Plugins → AntiGravity* can "Query usage/quota" successfully
+(failures are usually a proxy or sign-in problem).
+
 **`does not provide an export named 'ToolCallId'`.**
-Your host `@deepseek-ai/dsh-llm` is older than `0.1.5-rc.2`. Update dsh. (This plugin declares its harness dependencies as *optional* peers precisely so pnpm never installs a second, older copy of `dsh-llm` into your profile — if you see this error, an old copy is being resolved anyway.)
+Your host `@deepseek-ai/dsh-llm` is older than `0.1.5-rc.2`. Update dsh. (This plugin deliberately keeps its harness dependencies **out of `dependencies`/`peerDependencies`** — declaring them makes pnpm fetch the whole `@deepseek-ai/*` set from the registry, which includes unpublished packages, so `dsh plugin add` would always fail. Runtime resolution is provided by `node scripts/link-runtime-deps.mjs`, which links your host install. If you still see this error, an old copy is being resolved anyway.)
 
 **The Test button works but chatting fails, or vice versa.**
 Both paths read the same live configuration, so this should not happen on 0.1.2+. If it does, re-check the **Command** path and the **Proxy** value, then restart dsh.

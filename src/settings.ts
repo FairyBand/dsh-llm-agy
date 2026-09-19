@@ -12,6 +12,7 @@ import { isAbsolute, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { runAgyModels } from './model-catalog.js'
 import { resolveAgyProxy, agyProxyEnv } from './proxy.js'
+import { runAgyQuota } from './quota.js'
 
 export const AGY_SETTINGS_NAMESPACE = 'agy'
 
@@ -194,12 +195,39 @@ export function registerAgySettings(ctx: Context): () => Record<string, string> 
             name: ok ? (output.slice(0, 300) || '(空回复)') : `✗ AGY 测试失败:${output.slice(0, 300)}`,
           }]
         }
+        if (action === 'quota') {
+          const quota = await runAgyQuota(command, proxy, true)
+          return [{
+            id: 'agy-quota',
+            name: JSON.stringify(quota),
+          }]
+        }
         // 异步校验:不要在 discovery 回调里同步 spawn agy。
         const installed = await agyInstalledAsync(command)
         const loggedIn = installed && agyLoggedIn()
+        let statusText = `AGY 安装:${installed ? '✓ 已安装' : '✗ 未安装'} | 登录状态:${installed ? (loggedIn ? '✓ 已登录' : '✗ 未登录') : '-'} | 命令:${command}`
+        if (installed && loggedIn) {
+          try {
+            const quota = await runAgyQuota(command, proxy, false)
+            if (quota.ok && quota.groups.length > 0) {
+              const gemini = quota.groups.find((g) => g.name.toLowerCase().includes('gemini'))
+              const b5h = gemini?.buckets.find((b) => b.window === '5h')
+              const bWeek = gemini?.buckets.find((b) => b.window === 'weekly')
+              if (b5h || bWeek) {
+                const parts: string[] = []
+                if (b5h) parts.push(`5h ${b5h.percentage}%`)
+                if (bWeek) parts.push(`周 ${bWeek.percentage}%`)
+                statusText += ` | Gemini配额:${parts.join(' / ')}`
+              }
+              if (quota.credits !== undefined) {
+                statusText += ` | 积分:${quota.credits.remainingCredits}`
+              }
+            }
+          } catch { /* 状态追加失败不影响主体 */ }
+        }
         return [{
           id: 'agy-status',
-          name: `AGY 安装:${installed ? '✓ 已安装' : '✗ 未安装'} | 登录状态:${installed ? (loggedIn ? '✓ 已登录' : '✗ 未登录') : '-'} | 命令:${command}`,
+          name: statusText,
         }]
       })
     } catch (error) {

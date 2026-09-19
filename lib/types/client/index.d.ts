@@ -1,8 +1,9 @@
-// AntiGravity 插件面板卡片(注册 settings.plugin.item,与官方 WebSearch 卡片外观统一)。
-// 复用 dsh primitives 组件(Button/图标/writeClipboard)与官方
-// ui-settings-plugins 的 PluginCard/fields CSS(注入同款样式类)。
-// 字段读写走官方 SettingsScope;状态/测试探测需会话级 remote(暂不可用)。
-// 服务端直接 spawn agy CLI,不落会话。
+// AntiGravity 插件客户端扩展:
+// 1. 设置面板卡片 (settings.plugin.item, 与官方 WebSearch 卡片外观统一)
+// 2. 输入框底栏模型选择器旁紧凑徽标 (conversation.input.right):
+//    只在**当前对话**的模型 provider 为 Antigravity(AGY) 时显示,切到其它
+//    provider 的对话自动隐藏;点击弹出 AGY 配额详情浮层
+// 3. 全局响应式共享配额状态 (页面加载自动静默获取, 一处刷新处处同步)
 window.__ModuleLoader__.load({
   id: 'dsh-llm-agy',
   factory: (require) => {
@@ -17,7 +18,7 @@ window.__ModuleLoader__.load({
       IconCopyOutline16, IconChevronDownOutline14, writeClipboard,
     } = P
 
-    // ── 官方 PluginCard CSS(与 ui-settings-plugins 完全一致) ──
+    // ── 官方 PluginCard CSS + 配额与用量专属样式 ──
     const CSS = {
       card: '.dshAgy_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:12px;list-style:none;transition:border-color .16s,background .16s}',
       cardHover: '.dshAgy_card:hover{border-color:var(--dsw-alias-label-dimmed)}',
@@ -46,6 +47,18 @@ window.__ModuleLoader__.load({
       pickerItem: '.dshAgy_pickerItem{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:8px 10px;border:none;border-radius:10px;background:transparent;cursor:pointer;font-size:14px;line-height:22px;color:var(--dsw-alias-label-primary);text-align:left}.dshAgy_pickerItem:hover{background:var(--dsw-alias-interactive-bg-hover)}',
       pickerLabel: '.dshAgy_pickerLabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       pickerCheck: '.dshAgy_pickerCheck{flex:none;color:var(--dsw-alias-label-primary)}',
+      // 配额进度与用量卡片样式
+      quotaBox: '.dshAgy_quotaBox{display:flex;flex-direction:column;gap:12px;padding:12px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-3);margin:8px 0 4px}',
+      quotaGroup: '.dshAgy_quotaGroup{display:flex;flex-direction:column;gap:8px}',
+      quotaGroupName: '.dshAgy_quotaGroupName{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px}',
+      quotaBarWrap: '.dshAgy_quotaBarWrap{display:flex;flex-direction:column;gap:6px;padding:8px 10px;background:var(--dsw-alias-bg-layer-2);border-radius:8px;border:1px solid var(--dsw-alias-border-l1)}',
+      quotaBarHead: '.dshAgy_quotaBarHead{display:flex;justify-content:space-between;align-items:center;font-size:12px}',
+      quotaBarTrack: '.dshAgy_quotaBarTrack{width:100%;height:6px;background:var(--dsw-alias-border-l2);border-radius:3px;overflow:hidden}',
+      quotaBarFill: '.dshAgy_quotaBarFill{height:100%;border-radius:3px;transition:width .3s ease}',
+      quotaBarDesc: '.dshAgy_quotaBarDesc{font-size:11px;color:var(--dsw-alias-label-tertiary);line-height:1.4}',
+      quotaCredits: '.dshAgy_quotaCredits{display:flex;align-items:center;justify-content:space-between;font-size:12px;padding:8px 10px;background:var(--dsw-alias-bg-layer-2);border-radius:8px;border:1px solid var(--dsw-alias-border-l1)}',
+      // 输入框内右下角模型选择器旁紧凑徽标
+      inputBadge: '.dshAgy_inputBadge{box-sizing:border-box;display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 8px;border-radius:6px;font-size:12px;font-weight:500;font-family:inherit;font-variant-numeric:tabular-nums;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);cursor:pointer;transition:all .16s ease;user-select:none;margin-right:6px}.dshAgy_inputBadge:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-label-tertiary);color:var(--dsw-alias-label-primary)}',
     }
     const cssText = Object.values(CSS).join('')
     const tagId = 'dsh-llm-agy/plugin-card.css'
@@ -65,6 +78,342 @@ window.__ModuleLoader__.load({
       pre: 'dshAgy_pre', row: 'dshAgy_row', modelField: 'dshAgy_modelField',
       pickerList: 'dshAgy_pickerList', pickerItem: 'dshAgy_pickerItem',
       pickerLabel: 'dshAgy_pickerLabel', pickerCheck: 'dshAgy_pickerCheck',
+      quotaBox: 'dshAgy_quotaBox', quotaGroup: 'dshAgy_quotaGroup',
+      quotaGroupName: 'dshAgy_quotaGroupName', quotaBarWrap: 'dshAgy_quotaBarWrap',
+      quotaBarHead: 'dshAgy_quotaBarHead', quotaBarTrack: 'dshAgy_quotaBarTrack',
+      quotaBarFill: 'dshAgy_quotaBarFill', quotaBarDesc: 'dshAgy_quotaBarDesc',
+      quotaCredits: 'dshAgy_quotaCredits',
+      inputBadge: 'dshAgy_inputBadge',
+    }
+
+    // ── 全局配额数据与响应式共享 Store ──
+    let rootCtx = null
+
+    /**
+     * 用量入口只在**当前对话**的模型 provider 是 Antigravity(AGY)时显示。
+     *
+     * 关键:provider 必须跟"当前会话的模型选择"走,而不是全局默认设置 ——
+     * 否则在不同 provider 的历史对话之间切换时,徽标不会跟着变(实测问题:
+     * 打开 Gemini 对话显示用量后,切到 DeepSeek 的历史对话仍然显示,必须手动
+     * 切一次模型再切回来才消失)。
+     *
+     * 数据来源(按优先级):
+     *   1. `uiSession.current` 给出当前会话 id,`modelDirectories.directoryFor(id)`
+     *      的 store 保存该会话的当前选择(`current.provider`);
+     *   2. 回退到全局 `agent-default-model` 设置(会话尚未就绪时)。
+     */
+    const AGY_PROVIDER_ID = 'agy'
+
+    /** 快照值缓存:保证 useSyncExternalStore 的 getSnapshot 引用稳定。 */
+    function stableValue(slot, next) {
+      if (slot.value !== next) {
+        slot.value = next
+        slot.hasValue = true
+      }
+      return slot.value
+    }
+
+    /** 读取设置作用域的当前值(兼容 subscribe/getSnapshot 两种形态)。 */
+    function readScopeValue(scope) {
+      try {
+        if (scope && typeof scope.getSnapshot === 'function') {
+          const snapshot = scope.getSnapshot()
+          if (snapshot && typeof snapshot === 'object' && 'value' in snapshot) return snapshot.value
+          return snapshot
+        }
+        if (scope && typeof scope.get === 'function') return scope.get()
+      } catch { /* 镜像未就绪/已释放 */ }
+      return undefined
+    }
+
+    /** 订阅任意 store/作用域;返回清理函数。 */
+    function subscribeStore(store, onChange) {
+      if (store === undefined || store === null) return () => {}
+      try {
+        if (typeof store.subscribe === 'function') {
+          const dispose = store.subscribe(onChange)
+          return typeof dispose === 'function' ? dispose : () => {}
+        }
+      } catch { /* ignore */ }
+      return () => {}
+    }
+
+    /** 取会话级服务的惰性缓存(挂在根 ctx 上,避免重复查找)。 */
+    function serviceCache(ctx) {
+      if (ctx.__agyServices === undefined) ctx.__agyServices = {}
+      return ctx.__agyServices
+    }
+
+    /**
+     * 当前会话 id。
+     * uiSession 的 binding 对象把 id 放在 `key` 上(见 dsh-client-ui-session 的
+     * materialize: `{ key: binding.sessionId, ... }`),session 作用域还会以
+     * `props.sessionId` 暴露同一个值,这里两种形态都接受。
+     */
+    function readCurrentSessionId(ctx) {
+      try {
+        const uiSession = serviceCache(ctx).uiSession ?? (serviceCache(ctx).uiSession = ctx.get('uiSession'))
+        const snapshot = uiSession?.current?.getSnapshot?.()
+        const candidates = [snapshot?.props?.sessionId, snapshot?.key, snapshot?.sessionId]
+        for (const value of candidates) {
+          if (typeof value === 'string' && value !== '') return value
+        }
+      } catch { /* uiSession 缺席时回退到全局默认模型 */ }
+      return undefined
+    }
+
+    /** 订阅"当前会话切换"。 */
+    function subscribeCurrentSession(ctx, onChange) {
+      try {
+        const uiSession = serviceCache(ctx).uiSession ?? (serviceCache(ctx).uiSession = ctx.get('uiSession'))
+        return subscribeStore(uiSession?.current, onChange)
+      } catch { return () => {} }
+    }
+
+    /** 某个会话的模型选择 store(含 current.provider)。 */
+    function directoryOf(ctx, sessionId) {
+      if (sessionId === undefined) return undefined
+      try {
+        const services = serviceCache(ctx)
+        const dirs = services.modelDirectories ?? (services.modelDirectories = ctx.get('modelDirectories'))
+        if (dirs === undefined || dirs === null || typeof dirs.directoryFor !== 'function') return undefined
+        return dirs.directoryFor(sessionId)?.store
+      } catch { return undefined }
+    }
+
+    /** 全局默认模型 provider(回退路径)。 */
+    function readDefaultProvider(ctx) {
+      try {
+        const services = serviceCache(ctx)
+        if (services.defaultModelScope === undefined) {
+          services.defaultModelScope = ctx.settingsScope.bind({ namespace: 'agent-default-model' })
+        }
+        const value = readScopeValue(services.defaultModelScope)
+        return value && typeof value.provider === 'string' ? value.provider : undefined
+      } catch { return undefined }
+    }
+
+    /** 读取指定会话当前选择的 provider。 */
+    function readSessionProvider(ctx, sessionId) {
+      const store = directoryOf(ctx, sessionId)
+      if (store === undefined) return undefined
+      try {
+        const snapshot = store.getSnapshot()
+        const provider = snapshot?.current?.provider
+        return typeof provider === 'string' && provider !== '' ? provider : undefined
+      } catch { return undefined }
+    }
+
+    /**
+     * 当前会话的模型 provider(响应式:切换会话或切换模型都会立刻重算)。
+     * @returns provider id,或 undefined(会话/目录尚未就绪)
+     */
+    function useCurrentProvider(explicitCtx) {
+      const c = explicitCtx || rootCtx
+      const slotRef = react.useRef({ value: undefined, hasValue: false })
+      // 会话模型目录的订阅随当前会话变化,用 ref 保存最近一次清理函数
+      const dirDisposeRef = react.useRef(null)
+      const subscribedDirRef = react.useRef(undefined)
+
+      const getSnapshot = react.useCallback(() => {
+        const next = (() => {
+          if (c === undefined || c === null) return undefined
+          const sessionId = readCurrentSessionId(c)
+          const fromSession = readSessionProvider(c, sessionId)
+          // 会话目录尚未就绪时回退到全局默认模型,避免首次渲染闪烁
+          return fromSession ?? readDefaultProvider(c)
+        })()
+        return stableValue(slotRef.current, next)
+      }, [c])
+
+      const subscribe = react.useCallback((onChange) => {
+        if (c === undefined || c === null) return () => {}
+        const syncDirectory = () => {
+          const sessionId = readCurrentSessionId(c)
+          if (subscribedDirRef.current === sessionId) return
+          subscribedDirRef.current = sessionId
+          if (typeof dirDisposeRef.current === 'function') dirDisposeRef.current()
+          dirDisposeRef.current = subscribeStore(directoryOf(c, sessionId), onChange)
+        }
+        syncDirectory()
+        const disposeSession = subscribeCurrentSession(c, () => {
+          syncDirectory()
+          onChange()
+        })
+        return () => {
+          disposeSession()
+          if (typeof dirDisposeRef.current === 'function') dirDisposeRef.current()
+          dirDisposeRef.current = null
+          subscribedDirRef.current = undefined
+        }
+      }, [c])
+
+      return react.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+    }
+
+    /** 是否展示 AGY 用量入口。 */
+    function isAgyProvider(provider) {
+      return typeof provider === 'string' && provider.toLowerCase() === AGY_PROVIDER_ID
+    }
+
+    const quotaState = {
+      data: null,
+      loading: false,
+      error: '',
+      lastFetched: 0,
+    }
+    const quotaListeners = new Set()
+
+    function notifyQuotaListeners() {
+      quotaListeners.forEach((fn) => {
+        try { fn(quotaState) } catch (e) { /* ignore */ }
+      })
+    }
+
+    function resolveRemote(explicitCtx) {
+      try {
+        const c = explicitCtx || rootCtx
+        if (!c) return undefined
+        let r
+        if (typeof c.get === 'function') r = c.get('remote.llm')
+        if (r === undefined && c.remote) r = c.remote.llm
+        return r
+      } catch { return undefined }
+    }
+
+    const unwrapDiscovery = (response) => {
+      if (response !== null && typeof response === 'object' && response.ok === false) {
+        const m = response.error && response.error.message
+        throw new Error(m || '服务端拒绝了该探测')
+      }
+      const value = (response !== null && typeof response === 'object' && response.ok === true)
+        ? response.value
+        : response
+      return Array.isArray(value) ? value : []
+    }
+
+    async function fetchAgyQuota(force = false, explicitCtx) {
+      const now = Date.now()
+      if (!force && quotaState.data && (now - quotaState.lastFetched < 20_000)) {
+        return quotaState.data
+      }
+      if (quotaState.loading) return quotaState.data
+
+      quotaState.loading = true
+      quotaState.error = ''
+      notifyQuotaListeners()
+
+      let gotData = false
+
+      // 通道 1: RPC discoverModels('agy', { provider: 'quota' })
+      try {
+        const remote = resolveRemote(explicitCtx)
+        if (remote && typeof remote.discoverModels === 'function') {
+          const res = unwrapDiscovery(await remote.discoverModels('agy', { provider: 'quota' }))
+          const item = res && res[0]
+          if (item && item.name) {
+            try {
+              const parsed = JSON.parse(item.name)
+              if (parsed && (parsed.ok || Array.isArray(parsed.groups))) {
+                quotaState.data = parsed
+                quotaState.lastFetched = Date.now()
+                gotData = true
+              } else if (parsed && parsed.error) {
+                quotaState.error = parsed.error
+              }
+            } catch { /* 可能是 status 文本,继续尝试通道 2 */ }
+          }
+        }
+      } catch (e) {
+        /* RPC 异常,继续尝试通道 2 */
+      }
+
+      // 通道 2: HTTP fetch /api/plugins/dsh-llm-agy/quota
+      if (!gotData) {
+        try {
+          const resp = await fetch('/api/plugins/dsh-llm-agy/quota')
+          if (resp.ok) {
+            const parsed = await resp.json()
+            if (parsed && (parsed.ok || Array.isArray(parsed.groups))) {
+              quotaState.data = parsed
+              quotaState.lastFetched = Date.now()
+              gotData = true
+            } else if (parsed && parsed.error) {
+              quotaState.error = parsed.error
+            }
+          }
+        } catch { /* 忽略 fetch 失败 */ }
+      }
+
+      if (!gotData && !quotaState.error) {
+        quotaState.error = '未能获取配额数据，请确认 AGY 已登录并在插件设置中配置代理'
+      }
+
+      quotaState.loading = false
+      notifyQuotaListeners()
+      return quotaState.data
+    }
+
+    function useAgyQuota(autoFetch = true, explicitCtx) {
+      const [state, setState] = react.useState(() => ({ ...quotaState }))
+      react.useEffect(() => {
+        const listener = (s) => setState({ ...s })
+        quotaListeners.add(listener)
+        if (autoFetch && !quotaState.data && !quotaState.loading) {
+          fetchAgyQuota(false, explicitCtx)
+        }
+        return () => {
+          quotaListeners.delete(listener)
+        }
+      }, [autoFetch, explicitCtx])
+
+      return {
+        ...state,
+        refresh: () => fetchAgyQuota(true, explicitCtx),
+      }
+    }
+
+    /** 提取配额核心指标(用于药丸与徽标展示)。 */
+    function extractQuotaSummary(quota) {
+      if (!quota || !quota.groups || quota.groups.length === 0) {
+        return null
+      }
+      const gemini = quota.groups.find((g) => g.name && g.name.toLowerCase().includes('gemini')) || quota.groups[0]
+      const b5h = gemini?.buckets?.find((b) => b.window === '5h' || b.name.toLowerCase().includes('5-hour') || b.name.toLowerCase().includes('five'))
+      const bWeek = gemini?.buckets?.find((b) => b.window === 'weekly' || b.name.toLowerCase().includes('weekly'))
+
+      const pct5h = b5h ? (typeof b5h.percentage === 'number' ? b5h.percentage : Math.round((b5h.remainingFraction ?? 1) * 100)) : null
+      const pctWeek = bWeek ? (typeof bWeek.percentage === 'number' ? bWeek.percentage : Math.round((bWeek.remainingFraction ?? 1) * 100)) : null
+
+      const mainPct = pct5h ?? pctWeek ?? 100
+
+      let statusColor = '#10b981' // 正常绿
+      if (mainPct < 20) statusColor = '#ef4444' // 警报红
+      else if (mainPct < 50) statusColor = '#f59e0b' // 预警橙
+
+      let labelText = ''
+      if (pct5h !== null && pctWeek !== null) {
+        labelText = `5h: ${pct5h}% · 周: ${pctWeek}%`
+      } else if (pct5h !== null) {
+        labelText = `5h: ${pct5h}%`
+      } else if (pctWeek !== null) {
+        labelText = `周: ${pctWeek}%`
+      } else {
+        labelText = `${mainPct}%`
+      }
+
+      return {
+        geminiGroup: gemini,
+        b5h,
+        bWeek,
+        pct5h,
+        pctWeek,
+        mainPct,
+        statusColor,
+        labelText,
+        credits: quota.credits?.remainingCredits ?? 0,
+        updatedAt: quota.updatedAt,
+      }
     }
 
     // 多系统安装命令 + 工具说明
@@ -101,6 +450,178 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** 单个用量窗口进度条项 */
+    function QuotaBucketView({ bucket }) {
+      const pct = typeof bucket.percentage === 'number'
+        ? bucket.percentage
+        : Math.round((bucket.remainingFraction ?? 1) * 100)
+      let barColor = 'var(--dsw-alias-brand-primary, #10b981)'
+      if (pct < 20) barColor = '#ef4444'
+      else if (pct < 50) barColor = '#f59e0b'
+
+      return react.createElement('div', { className: C.quotaBarWrap },
+        react.createElement('div', { className: C.quotaBarHead },
+          react.createElement('span', { style: { fontWeight: 500, color: 'var(--dsw-alias-label-primary)' } }, bucket.name),
+          react.createElement('span', { style: { fontWeight: 600, color: barColor } }, `${pct}% 剩余`),
+        ),
+        react.createElement('div', { className: C.quotaBarTrack },
+          react.createElement('div', {
+            className: C.quotaBarFill,
+            style: { width: `${Math.max(0, Math.min(100, pct))}%`, background: barColor },
+          }),
+        ),
+        (bucket.description || bucket.resetTime) && react.createElement('div', { className: C.quotaBarDesc },
+          bucket.description || (bucket.resetTime ? `完全恢复时间: ${bucket.resetTime}` : ''),
+        ),
+      )
+    }
+
+    /** 配额与用量面板组件 */
+    function QuotaDisplay({ quota, loading, error, showHeader = true }) {
+      if (loading && !quota) {
+        return react.createElement('div', { className: C.quotaBox },
+          react.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+            react.createElement(IconLoadingOutline16, { size: 14 }),
+            react.createElement('span', { className: C.hint }, '正在查询 AGY 账号配额与用量...'),
+          ),
+        )
+      }
+      if (error && !quota) {
+        return react.createElement('div', { className: C.quotaBox },
+          react.createElement('span', { className: C.hint, style: { color: '#ef4444' } }, error),
+        )
+      }
+      if (!quota || !quota.groups || quota.groups.length === 0) {
+        return null
+      }
+
+      return react.createElement('div', { className: C.quotaBox },
+        showHeader && react.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--dsw-alias-border-l2)', paddingBottom: 6 } },
+          react.createElement('span', { style: { fontSize: 13, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, '当前账号剩余配额与用量'),
+          quota.updatedAt && react.createElement('span', { className: C.hint, style: { fontSize: 11 } },
+            `更新于 ${new Date(quota.updatedAt).toLocaleTimeString()}`,
+          ),
+        ),
+        quota.groups.map((group) => react.createElement('div', { key: group.name, className: C.quotaGroup },
+          react.createElement('div', { className: C.quotaGroupName },
+            react.createElement('span', null, group.name),
+            group.description && react.createElement('span', { className: C.hint, style: { fontSize: 11, fontWeight: 'normal' } }, group.description),
+          ),
+          group.buckets.map((b) => react.createElement(QuotaBucketView, { key: b.id || b.name, bucket: b })),
+        )),
+        quota.credits !== undefined && react.createElement('div', { className: C.quotaCredits },
+          react.createElement('span', { style: { fontWeight: 500, color: 'var(--dsw-alias-label-primary)' } }, 'AI Credits 积分'),
+          react.createElement('span', { style: { fontWeight: 600, color: 'var(--dsw-alias-label-secondary)' } }, `${quota.credits.remainingCredits} 点`),
+        ),
+      )
+    }
+
+    /** 配额详情弹窗 Modal:点击药丸/徽标时弹出,查看各模型组完整进度条与恢复倒计时 */
+    function QuotaDetailModal({ open, onClose, quota, loading, error, onRefresh }) {
+      return react.createElement(Modal, {
+        open,
+        onClose,
+        title: 'AGY 账号配额与剩余用量',
+        closeLabel: '关闭',
+      },
+        react.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 12, minWidth: 320, maxWidth: 460 } },
+          // 头部操作行:更新时间 + 刷新按钮
+          react.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 4 } },
+            react.createElement('span', { className: C.hint, style: { fontSize: 12 } },
+              quota?.updatedAt ? `更新于 ${new Date(quota.updatedAt).toLocaleTimeString()}` : (loading ? '正在查询...' : '尚未获取配额'),
+            ),
+            react.createElement(Button, {
+              size: 'sm', variant: 'ghost', onClick: onRefresh, disabled: loading,
+              icon: loading
+                ? react.createElement(IconLoadingOutline16, { size: 12 })
+                : react.createElement(IconRefreshOutline16, { size: 12 }),
+            }, loading ? '刷新中...' : '刷新用量'),
+          ),
+          // 内容区
+          loading && !quota
+            ? react.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '24px 0', justifyContent: 'center' } },
+                react.createElement(IconLoadingOutline16, { size: 16 }),
+                react.createElement('span', { className: C.hint }, '正在查询 AGY 账号配额...'),
+              )
+            : error && !quota
+              ? react.createElement('div', { style: { color: '#ef4444', fontSize: 13, padding: '12px 0' } }, error)
+              : react.createElement(QuotaDisplay, { quota, loading, error, showHeader: false }),
+          // 底部说明
+          react.createElement('div', { style: { borderTop: '1px solid var(--dsw-alias-border-l1)', paddingTop: 8, fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', lineHeight: 1.4 } },
+            '💡 5小时限额随时间滚动恢复，每周限额按账号周期重置。可在系统终端执行 agy 确认登录状态。',
+          ),
+        ),
+      )
+    }
+
+    /**
+     * 2. 输入框内紧凑徽标:注册在 conversation.input.right
+     * 紧靠在输入框底栏的模型选择器左侧,一眼可见。
+     */
+    function QuotaInputBadge(props) {
+      const [modalOpen, setModalOpen] = react.useState(false)
+      const provider = useCurrentProvider(props && props.ctx)
+      const showQuota = isAgyProvider(provider)
+      const { data: quota, loading, error, refresh } = useAgyQuota(showQuota, props && props.ctx)
+      const summary = extractQuotaSummary(quota)
+
+      // 只在主模型由 Antigravity(AGY)provider 提供时展示紧凑徽标。
+      if (!showQuota) return null
+
+      let badgeText = '⚡ AGY'
+      let dotColor = '#10b981'
+      let titleText = '点击查看 AGY 剩余用量'
+
+      if (loading && !quota) {
+        badgeText = '⚡ ...'
+        dotColor = '#94a3b8'
+        titleText = '正在查询 AGY 账号配额...'
+      } else if (summary) {
+        badgeText = `⚡ ${summary.mainPct}%`
+        dotColor = summary.statusColor
+        titleText = `AGY 剩余配额: 5小时 ${summary.pct5h ?? '-'}% / 每周 ${summary.pctWeek ?? '-'}% (点击查看详情)`
+      } else if (error) {
+        badgeText = '⚡ 失败'
+        dotColor = '#ef4444'
+        titleText = `查询配额失败: ${error} (点击重试)`
+      }
+
+      return react.createElement(react.Fragment, null,
+        react.createElement('button', {
+          type: 'button',
+          className: C.inputBadge,
+          title: titleText,
+          onClick: () => {
+            if (error && !quota) refresh()
+            else setModalOpen(true)
+          },
+        },
+          react.createElement('span', {
+            style: {
+              display: 'inline-block',
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: dotColor,
+              flex: 'none',
+            },
+          }),
+          react.createElement('span', null, badgeText),
+        ),
+        react.createElement(QuotaDetailModal, {
+          open: modalOpen,
+          onClose: () => setModalOpen(false),
+          quota,
+          loading,
+          error,
+          onRefresh: refresh,
+        }),
+      )
+    }
+
+    /**
+     * 4. 设置页卡片:注册在 settings.plugin.item
+     */
     function AgyCard(props) {
       const [open, setOpen] = react.useState(false)
       const [checking, setChecking] = react.useState(false)
@@ -109,43 +630,12 @@ window.__ModuleLoader__.load({
       const [testText, setTestText] = react.useState('')
       const scope = props.scope
 
-
-      // 探测(状态/测试/模型列表)走官方 remote 通道:
-      //   ctx.remote.llm.discoverModels('agy', { provider })
-      // 服务端 settings.js 已注册 discovery handler(直接 spawn agy,不落会话)。
-      // 这里惰性解析服务而不把 remote.llm 写进 inject:inject 缺服务会让整张卡片
-      // 都不激活,那样连字段编辑都会一起消失,代价远大于按钮本身。
-      const resolveRemote = react.useCallback(() => {
-        try {
-          const c = props.ctx
-          if (!c) return undefined
-          let r
-          if (typeof c.get === 'function') r = c.get('remote.llm')
-          if (r === undefined && c.remote) r = c.remote.llm
-          return r
-        } catch { return undefined }
-      }, [props.ctx])
-
-      // 远端返回的是信封,不是裸数组:
-      //   { ok: true, value: [...] } | { ok: false, error: { message } }
-      // 与官方 ui-settings-models 消费 discoverModels 的写法一致
-      // (dsh-client-ui-settings-models/lib/client.js:2614-2622)。
-      // 之前直接 map 信封 → "(res ?? []).map is not a function"。
-      const unwrapDiscovery = (response) => {
-        if (response !== null && typeof response === 'object' && response.ok === false) {
-          const m = response.error && response.error.message
-          throw new Error(m || '服务端拒绝了该探测')
-        }
-        const value = (response !== null && typeof response === 'object' && response.ok === true)
-          ? response.value
-          : response
-        return Array.isArray(value) ? value : []
-      }
+      const resolveRemoteCallback = react.useCallback(() => resolveRemote(props.ctx), [props.ctx])
 
       const runProbe = react.useCallback(async (provider, setOut, setBusy) => {
         setBusy(true)
         try {
-          const remote = resolveRemote()
+          const remote = resolveRemoteCallback()
           if (remote === undefined || typeof remote.discoverModels !== 'function') {
             setOut('探测不可用:当前客户端上下文未提供 remote.llm 服务。')
           } else {
@@ -159,10 +649,12 @@ window.__ModuleLoader__.load({
           setOut('探测失败:' + (e && e.message ? e.message : String(e)))
         }
         setBusy(false)
-      }, [resolveRemote])
+      }, [resolveRemoteCallback])
 
       const onStatus = react.useCallback(() => runProbe('status', setStatusText, setChecking), [runProbe])
       const onTest = react.useCallback(() => runProbe('test', setTestText, setTesting), [runProbe])
+
+      const { data: quotaData, loading: quotaLoading, error: quotaError, refresh: loadQuota } = useAgyQuota(open, props.ctx)
 
       // 看图分工提示开关:读写 agy settings namespace 的 delegationGuide。
       const [guideOn, setGuideOn] = react.useState(true)
@@ -230,8 +722,7 @@ window.__ModuleLoader__.load({
         }
       }, [scope, searchOverrideOn])
 
-      // 默认模型 + 代理:config 探测取当前值与明细;models 探测取可选列表;
-      // 弹窗用官方 Modal,输入框用官方 Input(铺满卡片宽度)。
+      // 默认模型 + 代理
       const [models, setModels] = react.useState([])
       const [currentModel, setCurrentModel] = react.useState('')
       const [savedModel, setSavedModel] = react.useState('')
@@ -242,8 +733,6 @@ window.__ModuleLoader__.load({
       const [modelsError, setModelsError] = react.useState('')
       const [pickerOpen, setPickerOpen] = react.useState(false)
 
-      // 初始值与明细:读 SettingsScope 镜像(结构化、经网关校验)。
-      // 避免响应 schema 校验失败导致解析出垃圾值)。
       const loadConfig = react.useCallback(async () => {
         try {
           const v = scope.getSnapshot().value ?? {}
@@ -261,7 +750,7 @@ window.__ModuleLoader__.load({
         setLoadingModels(true)
         setModelsError('')
         try {
-          const remote = resolveRemote()
+          const remote = resolveRemoteCallback()
           if (remote === undefined || typeof remote.discoverModels !== 'function') {
             setModels([])
             setModelsError('获取失败:当前客户端上下文未提供 remote.llm 服务。')
@@ -274,22 +763,20 @@ window.__ModuleLoader__.load({
           setModelsError('获取失败:' + (e && e.message ? e.message : String(e)))
         }
         setLoadingModels(false)
-      }, [resolveRemote])
+      }, [resolveRemoteCallback])
 
       react.useEffect(() => {
         if (!open) return
-        // 只加载存储的历史值,不自动拉取模型列表(点"获取模型"时才请求)。
         loadConfig()
       }, [open, loadConfig])
 
-      // 提交默认模型:非空 = set,空 = unset(重置为 schema 默认,不写空字符串)。
       const writeModel = react.useCallback(async (value) => {
         try {
           if (value === '') await scope.unset('model')
           else await scope.set('model', value)
           if (value !== '') { setCurrentModel(value); setSavedModel(value) }
           loadConfig()
-        } catch { /* 写失败回读还原 */ loadConfig() }
+        } catch { loadConfig() }
       }, [scope, loadConfig])
 
       const onModelInput = react.useCallback((e) => setCurrentModel(e.target.value), [])
@@ -308,7 +795,6 @@ window.__ModuleLoader__.load({
         setPickerOpen(false)
       }, [writeModel])
 
-      // 提交代理:非空 = set,空 = unset;与已保存值一致时跳过。
       const onProxyInput = react.useCallback((e) => setCurrentProxy(e.target.value), [])
       const onProxyBlur = react.useCallback(async () => {
         const value = currentProxy.trim()
@@ -318,11 +804,10 @@ window.__ModuleLoader__.load({
           else await scope.set('proxy', value)
           setCurrentProxy(value)
           setSavedProxy(value)
-        } catch { /* 写失败回读还原 */ loadConfig() }
+        } catch { loadConfig() }
       }, [currentProxy, savedProxy, scope, loadConfig])
 
       return react.createElement('li', { className: `${C.card} ${open ? C.cardOpen : ''}` },
-        // 卡片头(与官方 PluginCard 一致)
         react.createElement('button', {
           type: 'button', className: C.header, 'aria-expanded': open,
           'aria-label': `${open ? '收起' : '展开'}: AntiGravity`,
@@ -330,12 +815,12 @@ window.__ModuleLoader__.load({
         },
           react.createElement('span', { className: C.headText },
             react.createElement('span', { className: C.name }, 'AntiGravity'),
-            react.createElement('span', { className: C.description }, '检测安装/登录、连通性测试、安装命令与工具说明'),
+            react.createElement('span', { className: C.description }, '检测安装/登录、实时配额与剩余用量、连通性测试、安装命令与工具说明'),
           ),
           react.createElement(IconChevronDownOutline14, { className: `${C.chevron} ${open ? C.chevronOpen : ''}` }),
         ),
         open && react.createElement('div', { className: C.body },
-          // 检测与测试
+          // 操作按钮行
           react.createElement('div', { className: C.row },
             react.createElement(Button, {
               size: 'md', onClick: onStatus, disabled: checking,
@@ -347,12 +832,19 @@ window.__ModuleLoader__.load({
               size: 'md', onClick: onTest, disabled: testing,
               icon: testing ? react.createElement(IconLoadingOutline16, { size: 14 }) : undefined,
             }, testing ? '测试中...' : '测试(回复 hi)'),
+            react.createElement(Button, {
+              size: 'md', onClick: loadQuota, disabled: quotaLoading,
+              icon: quotaLoading
+                ? react.createElement(IconLoadingOutline16, { size: 14 })
+                : react.createElement(IconRefreshOutline16, { size: 14 }),
+            }, quotaLoading ? '查询用量中...' : '查询用量/配额'),
           ),
           react.createElement('p', { className: C.hint }, '若已安装仍提示未安装,请重启 dsh 服务(PATH 生效后需重启)'),
           statusText !== '' && react.createElement('pre', { className: C.pre }, statusText),
           testText !== '' && react.createElement('pre', { className: C.pre }, testText),
+          react.createElement(QuotaDisplay, { quota: quotaData, loading: quotaLoading, error: quotaError, showHeader: true }),
 
-          // 默认模型:字符串输入 + "获取模型"弹窗选择
+          // 默认模型
           react.createElement('div', { className: C.field },
             react.createElement('div', { className: C.fieldHead },
               react.createElement('span', { className: C.label }, '默认模型'),
@@ -372,17 +864,17 @@ window.__ModuleLoader__.load({
             react.createElement('p', { className: C.hint }, '可直接输入模型 id(失焦保存),或点"获取模型"从弹窗选择;留空则使用 AGY 默认'),
           ),
 
-          // 代理:HTTP 代理,留空不设
+          // 代理
           react.createElement('div', { className: C.field },
             react.createElement('div', { className: C.fieldHead },
               react.createElement('span', { className: C.label }, '代理'),
             ),
             react.createElement(Input, {
               type: 'text', value: currentProxy, onChange: onProxyInput, onBlur: onProxyBlur,
-              placeholder: '例如 http://127.0.0.1:7890',
+              placeholder: '例如 http://127.0.0.1:7897',
               className: C.modelField,
             }),
-            react.createElement('p', { className: C.hint }, '例如 http://127.0.0.1:7890;留空则不设置代理(运行时未设置时回落到该地址)'),
+            react.createElement('p', { className: C.hint }, '例如 http://127.0.0.1:7897;留空则不设置代理(运行时未设置时回落到该地址)'),
           ),
 
           // 看图分工提示开关
@@ -397,9 +889,7 @@ window.__ModuleLoader__.load({
               }),
             ),
             react.createElement('p', { className: C.hint },
-              guideOn
-                ? '开启:注入工具使用提示词'
-                : '关闭:不注入工具使用提示词',
+              guideOn ? '开启:注入工具使用提示词' : '关闭:不注入工具使用提示词',
             ),
           ),
 
@@ -439,7 +929,7 @@ window.__ModuleLoader__.load({
             ),
           ),
 
-          // 安装命令(多系统,每行带复制按钮)
+          // 安装命令
           react.createElement('div', { className: C.field },
             react.createElement('div', { className: C.fieldHead },
               react.createElement('span', { className: C.label }, '安装命令'),
@@ -461,7 +951,7 @@ window.__ModuleLoader__.load({
             ),
           ),
 
-          // 获取模型弹窗:官方 Modal(模糊遮罩/Escape/标题/关闭) + Menu 样式列表
+          // 获取模型弹窗
           react.createElement(Modal, {
             open: pickerOpen,
             onClose: () => setPickerOpen(false),
@@ -489,17 +979,18 @@ window.__ModuleLoader__.load({
     }
 
     function apply(ctx) {
+      rootCtx = ctx
       const agyScope = ctx.settingsScope.bind({ namespace: 'agy' })
       const sectionInject = () => ({
         scope: agyScope,
-        // 卡片自行惰性解析 remote.llm(见 resolveRemote),不进 inject。
         ctx,
       })
+
+      // 1. 设置页插件卡片
       ctx.effect(() => {
         return ctx.slots.inject('settings.plugin.item', () => {
           return ctx.slots.register({
             name: 'settings.plugin.item',
-            // id(rc.6 list 槽)与 key(rc.7 keyed 槽)都传,兼容两种槽类型。
             id: 'agy',
             key: 'agy',
             order: 30,
@@ -508,12 +999,24 @@ window.__ModuleLoader__.load({
           }, AgyCard)
         })
       }, 'llm-agy-client: settings.plugin.item')
+
+      // 2. 输入框底栏模型选择器旁紧凑徽标 (conversation.input.right)
+      ctx.effect(() => {
+        return ctx.slots.inject('conversation.input.right', () => {
+          return ctx.slots.register({
+            name: 'conversation.input.right',
+            id: 'agy-quota-badge',
+            order: 10,
+            label: () => 'AGY 配额',
+          }, QuotaInputBadge)
+        })
+      }, 'llm-agy-client: conversation.input.right')
     }
 
-
-
     exports.apply = apply
-    exports.inject = ['slots', 'settingsScope']
+    // uiSession 用于跟随"当前会话"的模型选择;modelDirectories 惰性通过 ctx.get 获取,
+    // 不进 inject:万一某个服务缺席,也不会让整个客户端插件无法激活。
+    exports.inject = ['slots', 'settingsScope', 'remote', 'remote.llm', 'uiSession']
     exports.name = 'llm-agy-client'
     return module.exports
   },

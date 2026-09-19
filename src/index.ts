@@ -18,6 +18,9 @@ import { installDelegationGuide } from './delegate-guide.js'
 import { registerSubagentTool } from './subagent-tool.js'
 import { registerAgyModelsTool } from './models.js'
 import { registerSearchWebAgy } from './search-web-agy.js'
+import { registerAgyQuotaTool } from './quota-tool.js'
+export { runAgyQuota, formatQuotaSummaryMarkdown } from './quota.js'
+export type { AgyQuotaSummary, AgyQuotaGroup, AgyQuotaBucket, AgyCreditsInfo } from './quota.js'
 
 export const name = 'llm-agy'
 export const inject = ['llm', 'web', 'tools', 'subagents', 'systemPrompt']
@@ -88,6 +91,12 @@ function registerSubagentTools(ctx: Context, getOptions: () => AgyRuntimeOptions
     command: () => getOptions().command,
     proxy: () => getOptions().proxy,
     toolName: 'list_agy_models',
+  })
+  // 账号配额用量查询工具:在对话中可随时查询 Gemini / Claude / GPT 限额与积分。
+  registerAgyQuotaTool(ctx, {
+    command: () => getOptions().command,
+    proxy: () => getOptions().proxy,
+    toolName: 'check_agy_quota',
   })
 }
 
@@ -235,6 +244,13 @@ export function apply(ctx: Context, config: Config): void {
       syncImageServices()
     }
   })
+  // 配额用量只走两条通道,避免多余的 HTTP 路由:
+  //   1. RPC:discovery 的 `quota` action(设置面板/客户端探测);
+  //   2. 对话工具 check_agy_quota。
+  // (原先这里还注册了一条 /api/plugins/dsh-llm-agy/quota,但其 handler 引用了
+  // 未导入的 runAgyQuota —— 一旦被请求就抛 ReferenceError;客户端已有上述两条
+  // 通道,故直接移除这条冗余路由。)
+  //
   // 全局子代理委派提示(section),受 agy namespace 的 delegationGuide 开关控制。
   installDelegationGuide(ctx)
 }

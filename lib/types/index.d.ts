@@ -5,6 +5,8 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
+export { runAgyQuota, formatQuotaSummaryMarkdown } from './quota.js';
+export type { AgyQuotaSummary, AgyQuotaGroup, AgyQuotaBucket, AgyCreditsInfo } from './quota.js';
 export declare const name = "llm-agy";
 export declare const inject: string[];
 export interface Config {

@@ -17,7 +17,16 @@
 | **`list_agy_models`** | 查询 AGY 当前支持的模型 id |
 | **`read_image_agy`** | 让纯文本主模型"看图"——AGY 读取图片并返回文字描述 |
 | **AGY 网页搜索** | 经 AGY 走 Google 深度搜索;可接管全局 `web_search` 工具,也可保留为独立的 `agy_web_search` |
-| **设置面板卡片** | *设置 → 插件 → AntiGravity*:安装/登录状态、实时连通性测试、代理配置、功能开关 |
+| **设置面板卡片** | *设置 → 插件 → AntiGravity*:安装/登录状态、实时连通性测试、**剩余配额/用量可视化查看与刷新**、代理配置、功能开关 |
+| **`check_agy_quota`** | 账号剩余配额查询工具:直接在对话中查看 Gemini / Claude / GPT 模型组的 5 小时/每周剩余限额、重置倒计时及 AI 积分余额 |
+
+> **用量显示跟随"当前对话"的模型。** 输入框底栏、模型选择器左侧的
+> `⚡ 剩余%` 徽标只在**当前对话所用模型**的 provider 是
+> **Antigravity CLI (Gemini)** 时出现;切到任何用其它 provider 的对话(或把当前
+> 对话切回其它模型)都会立即隐藏,不刷新页面、不需要重启。判断依据是当前会话的
+> 模型选择(`uiSession` + 会话模型目录),**不是**全局默认模型 —— 所以在不同
+> provider 的历史对话之间来回切换也会正确跟随。设置面板里的配额卡片始终可手动查询
+> (按钮「查询用量/配额」),点徽标则可弹出完整进度条详情。
 
 ---
 
@@ -46,12 +55,35 @@ dsh plugin --profile <profile> add github:FairyBand/dsh-llm-agy
 
 然后 **重启 dsh**。
 
+> **从本地目录 link 安装(开发常用)必须先链接运行时依赖。**
+> `link:` 装配下,插件的真实路径就是你的 clone 目录,Node 会从该目录向上找
+> `node_modules`;而插件的服务端入口要 `import '@deepseek-ai/schemastery'` 等宿主包。
+> 缺这几个包时,dsh 会在启动阶段直接中止:
+>
+> ```
+> dsh: plugin(s) failed to load: llm-agy; Cordis startup failed
+> Cannot find package '@deepseek-ai/schemastery' imported from .../lib/index.js
+> ```
+>
+> 表现就是"装上插件 dsh 起不来,必须卸载才能启动"。用自带的装配脚本一步到位
+> (它会先链接运行时依赖,再装进 profile;离线、幂等):
+
+```bash
+# 在插件目录内执行;--profile 默认 web
+node scripts/link-profile.mjs --profile web
+```
+
+> 仓库路径**含空格**时,`dsh plugin add` 会把路径拆开、pnpm 也不接受 `file://` URL,
+> 因此脚本会在所在盘符根下自动建立一个无空格的装配路径(如 `D:\dsh-llm-agy`)并
+> 用它装配;该 junction 需要保留,不要删除。
+
 <details>
 <summary>其它安装来源</summary>
 
 ```bash
-# 本地已 clone 的目录
-dsh plugin --profile <profile> add /path/to/dsh-llm-agy
+# 手动装配:先链接运行时依赖,再用无空格的装配路径
+node scripts/link-runtime-deps.mjs
+dsh plugin --profile <profile> add D:\dsh-llm-agy
 
 # 已打包的 tarball
 dsh plugin --profile <profile> add /path/to/dsh-llm-agy-0.1.2.tgz
@@ -109,8 +141,34 @@ AGY 是 Go 程序,会读取 `HTTPS_PROXY` / `HTTP_PROXY`。正因如此,本插�
 **模型选择器里没有 "Antigravity CLI (Gemini)" 分组。**
 插件没有加载。重启 dsh,并在 *设置 → 插件* 里确认它已列出。如果已加载但分组缺失,请确认宿主提供的 `@deepseek-ai/dsh-llm ≥ 0.1.5-rc.2`(见[环境与版本要求](#环境与版本要求))。
 
+**装上插件后 dsh 启动不了,必须卸载才能启动。**
+日志里通常是这样一行:
+
+```
+dsh: plugin(s) failed to load: llm-agy; Cordis startup failed because these plugin(s) could not be resolved
+Cannot find package '@deepseek-ai/<pkg>' imported from <插件目录>/lib/index.js
+```
+
+原因是 dsh 以 `link:` 方式装配,插件的依赖从**插件自己的目录**向上解析,而插件入口
+要 import 宿主 dsh 的包。补一次链接即可(离线、幂等):
+
+```bash
+node scripts/link-runtime-deps.mjs   # 在插件目录内执行
+```
+
+脚本会自动定位本机 dsh 安装(桌面版 / CLI / `DSH_HOME` 三种布局,也可用
+`DSH_INSTALL_DIR` 显式指定),把 `@deepseek-ai/schemastery` 等运行时包链接进
+`node_modules/@deepseek-ai/`,然后重启 dsh。注意不要在链接之后运行 `pnpm install`:
+pnpm 会重建 `node_modules` 并清掉这些链接,重跑一次链接脚本即可。
+
+**用量徽标不见了。**
+这是预期行为:徽标(输入框底栏、模型选择器左侧那个 `⚡ xx%`)只在**当前对话**的模型
+provider 为 **Antigravity CLI (Gemini)** 时显示。把当前对话的模型切到该分组下的模型即可;
+切到其它 provider 的对话会自动隐藏。若确认当前对话已选 AGY 模型仍不显示,请检查
+*设置 → 插件 → AntiGravity* 能否「查询用量/配额」成功(失败通常是代理或登录问题)。
+
 **报 `does not provide an export named 'ToolCallId'`。**
-宿主的 `@deepseek-ai/dsh-llm` 比 `0.1.5-rc.2` 旧,请升级 dsh。(本插件的 harness 依赖被声明为 *optional peer*,正是为了让 pnpm 不会往你的 profile 里再装一份更旧的 `dsh-llm` —— 若仍报此错,说明有旧副本被解析进来了。)
+宿主的 `@deepseek-ai/dsh-llm` 比 `0.1.5-rc.2` 旧,请升级 dsh。(本插件的 harness 依赖**刻意不写进 `dependencies`/`peerDependencies`** —— 一旦声明,pnpm 会去 registry 拉整套 `@deepseek-ai/*`,其中含未发布的包,`dsh plugin add` 必然失败;运行期依赖改由 `node scripts/link-runtime-deps.mjs` 链接宿主提供。若仍报此错,说明有旧副本被解析进来了。)
 
 **设置面板里测试正常,但对话连不上(或反之)。**
 0.1.2 起两条路径读的是同一份实时配置,理论上不会再出现。若出现,请复查 **Command** 路径与 **Proxy** 取值,然后重启 dsh。
