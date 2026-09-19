@@ -38,7 +38,7 @@ export interface AgyCatalogOptions {
     /** 代理配置值(空/auto = 探测系统代理)。 */
     proxy?: AgyOptionValue<string>;
 }
-/** 内置模型表(实测 `agy models` 输出;id 自带档位后缀,stream() 据此决定是否再传 --effort)。 */
+/** 内置模型表(实测 `agy models` 输出,agy 1.2.7;是否再传 --effort 见 effort.ts)。 */
 export declare const BUILTIN_AGY_MODELS: ReadonlyArray<readonly [string, string]>;
 /**
  * 取配置值:支持 getter 函数,这样设置面板里改模型/代理能即时生效(不必重启)。

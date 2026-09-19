@@ -32,6 +32,7 @@
 import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { resolveAgyProxy, agyProxyEnv } from './proxy.js'
+import { isEffortRejection, rememberEffortUnsupported, shouldPassEffort } from './effort.js'
 
 /** 一次 AGY print 调用的参数。 */
 export interface AgyRunTextOptions {
@@ -82,16 +83,29 @@ export const DEFAULT_AGY_RUN_TIMEOUTS = {
 
 /**
  * 跑一次 AGY print 调用并返回 `result.response` 文本。
+ *
+ * `--effort` 是逐模型能力(判定见 effort.ts):不支持的模型上 AGY 会在会话启动前
+ * 直接拒绝。这里先按模型能力决定是否传,若仍被拒(能力表未覆盖的新模型)则记住
+ * 该模型并去掉 `--effort` 重跑一次 —— 拒绝发生在任何实际工作之前,重跑安全。
  * @throws AGY 显式报错、超时、无输出时抛出带原因的 Error。
  */
 export async function runAgyText(options: AgyRunTextOptions): Promise<string> {
+  const passEffort = shouldPassEffort(options.model, options.effort)
+  try {
+    return await runAgyTextOnce({ ...options, effort: passEffort ? options.effort : undefined })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (!passEffort || !isEffortRejection(message)) throw error
+    rememberEffortUnsupported(options.model)
+    return await runAgyTextOnce({ ...options, effort: undefined })
+  }
+}
+
+/** 单次执行(不含 effort 兼容处理)。 */
+async function runAgyTextOnce(options: AgyRunTextOptions): Promise<string> {
   const command = options.command
-  // 模型名自带强度后缀(gemini-3.8-flash-high 等)时,AGY 拒绝再传 --effort
-  // ("--model X conflicts with --effort=Y"),此时静默省略 --effort。
-  const modelEffortSuffix = /-(low|medium|high)$/i.exec(options.model ?? '') !== null
-  const effortArgs = options.effort !== undefined
-    && options.effort.length > 0
-    && !modelEffortSuffix
+  // 是否需要 --effort 由 runAgyText 决定,这里只负责拼参。
+  const effortArgs = options.effort !== undefined && options.effort.length > 0
     ? ['--effort', options.effort]
     : []
   // 代理解析(异步、带缓存):关掉 TUN 后靠注入 HTTPS_PROXY 让 agy 走 Clash;

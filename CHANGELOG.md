@@ -2,6 +2,23 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.1.4] - 2026-09-19
+
+### 修复
+
+- **选 Claude 模型必然报 `--effort is not supported`**:`--effort` 是 AGY 的**逐模型**能力,不是全局开关(实测 agy 1.2.7,以下情况一律在会话启动的参数校验阶段被拒:0 token、无会话、约 7 秒返回):
+  - Claude 全系完全不支持 —— `invalid model selection (--model "claude-opus-4-6-thinking" --effort "high"): --effort is not supported for model "claude-opus-4-6-thinking"`(`claude-sonnet-4-6` 同样);
+  - 模型 id 自带档位后缀的 Gemini/GPT-OSS,在 `--effort` 与模型档位**不一致**时报 `--model X conflicts with --effort=Y`(`gemini-3.8-flash-high` + `high` 正常,+ `low` 被拒;`gpt-oss-120b-medium` + `high` 被拒)。
+
+  原先只按 `-(low|medium|high)$` 后缀决定是否省略 `--effort`,而 `claude-*` 两代模型都不带该后缀 —— 于是它们永远带着 `--effort high` 启动、必然失败。现在判定收敛到新的 `src/effort.ts`:档位后缀、Claude/GPT-OSS 家族、以及运行时学到的模型一律省略;对能力表未覆盖的新模型保留自适应 —— 收到 effort 拒绝就记住该模型、去掉参数后**不消耗重试次数**地立刻重跑一次(拒绝发生在任何实际工作之前,重跑无副作用)。搜索(`AgySearchProvider`)与看图(`read_image_agy`)共用的 `runAgyText` 走同一套逻辑
+- `agy` 设置面板的推理强度说明补充真实语义:AGY 的档位由模型 id 决定(`gemini-3.8-flash-high` 等自带后缀),只有真正支持 `--effort` 的模型才会收到该参数
+- **点停止(abort)可能无反应**:中止若发生在 spawn 之前的 `await`(prompt 构建 / 代理解析)期间,abort 监听器还没注册,而 spawn 之后那次补检查只销毁了 stdout —— readline 的 async iterator 必须靠 `rl.close()` 才结束,于是读循环会一直挂到 AGY 自己退出。现在建立 readline 后立刻补一次中止检查,该窗口内的停止同样立即生效(`tests/adapter-abort.spec.ts` 由红转绿)
+
+### 测试
+
+- 新增 `tests/effort.spec.ts`(判定与报错识别)与 `tests/adapter-effort.spec.ts`(锁死 spawn 实参:Claude 不带 `--effort`、能力表未覆盖的模型带 `--effort`、被拒后自动降级重跑)
+- `tests/adapter-abort.spec.ts` 固定 `proxy: 'off'`,不再依赖"探测系统代理要多久"(原实现要等注册表查询,20ms 的等待窗口还到不了读循环)
+
 ## [0.1.3] - 2026-09-19
 
 ### 新增

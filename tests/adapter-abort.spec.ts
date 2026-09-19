@@ -55,6 +55,10 @@ describe('AgyLlmAdapter:停止(abort)必须结束流', () => {
       model: 'gemini-3.1-pro-high',
       effort: 'high',
       extraArgs: [],
+      // 强制直连:否则适配器会先探测系统代理(读注册表,最长 3 秒),
+      // 20ms 的等待窗口还没走到读循环,abort 监听器就还没注册 —— 那是另一条
+      // 路径(abort 早于 spawn),本用例只测"进程已起来、stdout 永不 EOF"。
+      proxy: 'off',
     })
     const controller = new AbortController()
     const chunks: StreamChunk[] = []
