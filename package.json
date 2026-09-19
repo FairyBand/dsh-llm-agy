@@ -31,7 +31,29 @@
       "platform": "web"
     }
   },
-  "//runtime-peer-deps": "本插件的服务端入口会 import 宿主 dsh 的包(见 scripts/link-runtime-deps.mjs 的 RUNTIME_PACKAGES)。这些包不写进 dependencies/peerDependencies:一旦声明,pnpm 会尝试从 registry 拉取整套 @deepseek-ai/*(其中含未发布包,必然 404),安装直接中断。运行期解析由 node scripts/link-runtime-deps.mjs 链接本机 dsh 安装提供,离线且版本与宿主一致。",
+  "//runtime-peers": "服务端入口会 import 宿主 dsh 的包,但它们刻意只声明为 optional peer:pnpm(配合仓库 .npmrc 的 auto-install-peers=false)既不安装也不链接它们,代价为零;而 dsh 的 profile 依赖闭包投影会读取 dependencies+peerDependencies,从而知道该为自己的 node_modules 镜像投影哪些包(GitHub 安装即靠它解析)。link: 本地目录安装时父链不经过该镜像,需先跑 node scripts/link-runtime-deps.mjs。",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/dsh-session": "*",
+    "@deepseek-ai/dsh-settings": "*",
+    "@deepseek-ai/dsh-subagent": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/dsh-util-values": "*",
+    "@deepseek-ai/dsh-web": "*",
+    "@deepseek-ai/schemastery": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": { "optional": true },
+    "@deepseek-ai/dsh-llm": { "optional": true },
+    "@deepseek-ai/dsh-session": { "optional": true },
+    "@deepseek-ai/dsh-settings": { "optional": true },
+    "@deepseek-ai/dsh-subagent": { "optional": true },
+    "@deepseek-ai/dsh-tools": { "optional": true },
+    "@deepseek-ai/dsh-util-values": { "optional": true },
+    "@deepseek-ai/dsh-web": { "optional": true },
+    "@deepseek-ai/schemastery": { "optional": true }
+  },
   "scripts": {
     "build": "node scripts/build.mjs",
     "link:runtime": "node scripts/link-runtime-deps.mjs",
